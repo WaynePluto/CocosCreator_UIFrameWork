@@ -2,6 +2,7 @@ import UIBase from "./UIBase";
 import { SysDefine, FormType } from "./config/SysDefine";
 import ResMgr from "./ResMgr";
 import UIModalMgr from "./UIModalMgr";
+import AdapterMgr, { AdaptaterType } from "./AdapterMgr";
 
 const {ccclass, property} = cc._decorator;
 
@@ -18,6 +19,15 @@ export default class UIManager extends cc.Component {
     private _MapCurrentShowUIForms: {[key: string]: UIBase} = cc.js.createMap();        // 正在显示的窗体(不包括弹窗)
     private _MapIndependentForms: {[key: string]: UIBase} = cc.js.createMap();          // 独立窗体 独立于其他窗体, 不受其他窗体的影响
     private _LoadingForm: {[key: string]: boolean} = cc.js.createMap();                 // 正在加载的form 
+
+    private _currWindowId = '';
+    public get currWindowId() {
+        return this._currWindowId;
+    }
+    private _currScreenId = '';
+    public get currScreenId() {
+        return this._currScreenId;
+    }
 
     private static instance: UIManager = null;                                          // 单例
     public static getInstance(): UIManager {
@@ -240,7 +250,7 @@ export default class UIManager extends cc.Component {
         baseUI.node.zIndex = this._StaCurrentUIForms.length;
         
         baseUI.onShow(...params);
-
+        this._currWindowId = baseUI.uid;
         UIModalMgr.inst.checkModalWindow(this._StaCurrentUIForms);
         await this.showForm(baseUI);
     }
@@ -262,11 +272,13 @@ export default class UIManager extends cc.Component {
         let UIBaseFromAll = this._MapAllUIForms[prefabPath];
         
         if(UIBaseFromAll == null) return ;
+        AdapterMgr.inst.adapatByType(AdaptaterType.FullScreen, UIBaseFromAll.node);
         await UIBaseFromAll._preInit();
 
         this._MapCurrentShowUIForms[prefabPath] = UIBaseFromAll;
         
         UIBaseFromAll.onShow(...params);
+        this._currScreenId = UIBaseFromAll.uid;
         await this.showForm(UIBaseFromAll);
     }
 
@@ -303,6 +315,7 @@ export default class UIManager extends cc.Component {
             topUIForm.onHide();
             UIModalMgr.inst.checkModalWindow(this._StaCurrentUIForms);
             await this.hideForm(topUIForm);
+            this._currWindowId = this._StaCurrentUIForms.length > 0 ? this._StaCurrentUIForms[this._StaCurrentUIForms.length-1].uid : '';
         }
     }
     private async exitUIFormsAndDisplayOther(prefabPath: string) {

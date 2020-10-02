@@ -7,13 +7,14 @@ export class LoadProgress {
     public cb?: Function;
 }
 
+/** 一些cocos api 的封装, promise函数统一加上sync后缀 */
 export default class CocosHelper {
 
     /** 加载进度 */
     public static loadProgress = new LoadProgress();
 
     /** 等待时间, 秒为单位 */
-    public static sleep = function(time: number) {
+    public static sleepSync = function(time: number): Promise<boolean> {
         return new Promise((resolve, reject) => {
             setTimeout(() => {
                 resolve(true);
@@ -27,9 +28,12 @@ export default class CocosHelper {
      * @param repeat -1，表示永久执行
      * @param tweens 
      */
-    public static async runRepeatTween(target: any, repeat: number, ...tweens: cc.Tween[]) {
+    public static async runRepeatTweenSync(target: any, repeat: number, ...tweens: cc.Tween[]) {
         return new Promise((resolve, reject) => {
             let selfTween = cc.tween(target);
+            if(target.tag) {
+                selfTween.tag(target.tag);
+            }
             for(const tmpTween of tweens) {
                 selfTween = selfTween.then(tmpTween);
             }
@@ -38,13 +42,15 @@ export default class CocosHelper {
             }else {
                 cc.tween(target).repeat(repeat, selfTween).start();
             }
-        });
-        
+        });   
     }
     /** 同步的tween */
-    public static async runSyncTween(target: any, ...tweens: cc.Tween[]) {
+    public static async runTweenSync(target: any, ...tweens: cc.Tween[]): Promise<void> {
         return new Promise((resolve, reject) => {
             let selfTween = cc.tween(target);
+            if(target.tag) {
+                selfTween.tag(target.tag);
+            }
             for(const tmpTween of tweens) {
                 selfTween = selfTween.then(tmpTween);
             }
@@ -52,11 +58,16 @@ export default class CocosHelper {
                 resolve();
             }).start();
         });
-        
     }
-
-    /** 同步的动作 */
-    public static async runSyncAction(node: cc.Node, ...actions: cc.FiniteTimeAction[]) {
+    /** 停止tween */
+    public stopTween(target: any) {
+        cc.Tween.stopAllByTarget(target);
+    }
+    public stopTweenByTag(tag: number) {
+        cc.Tween.stopAllByTag(tag);
+    }
+    /** 同步的动作, 在2.4.x action已经被废弃了, 不建议使用 */
+    public static async runActionSync(node: cc.Node, ...actions: cc.FiniteTimeAction[]) {
         if(!actions || actions.length <= 0) return ;
         return new Promise((resolve, reject) => {
             actions.push(cc.callFunc(() => {
@@ -67,7 +78,7 @@ export default class CocosHelper {
     }
 
     /** 同步的动画 */
-    public static async runSyncAnim(node: cc.Node, animName?: string | number) {
+    public static async runAnimSync(node: cc.Node, animName?: string | number) {
         let anim = node.getComponent(cc.Animation);
         if(!anim) return ;
         let clip: cc.AnimationClip = null;
@@ -86,19 +97,19 @@ export default class CocosHelper {
             }   
         }
         if(!clip) return ;
-        await CocosHelper.sleep(clip.duration);
+        await CocosHelper.sleepSync(clip.duration);
     }
 
     /** 加载资源异常时抛出错误 */
-    public static loadResThrowError<T>(url: string, type: typeof cc.Asset, progressCallback?: (completedCount: number, totalCount: number, item: any) => void): Promise<T> {
+    public static loadResThrowErrorSync<T>(url: string, type: typeof cc.Asset, progressCallback?: (completedCount: number, totalCount: number, item: any) => void): Promise<T> {
         
         return null;
 
     }
     /** 加载资源 */
-    public static loadRes<T>(url: string, type: typeof cc.Asset, progressCallback?: (completedCount: number, totalCount: number, item: any) => void): Promise<T>{
+    public static loadResSync<T>(url: string, type: typeof cc.Asset, progressCallback?: (completedCount: number, totalCount: number, item: any) => void): Promise<T>{
         if (!url || !type) {
-            cc.log("参数错误", url, type);
+            cc.error("参数错误", url, type);
             return;
         }
         CocosHelper.loadProgress.url = url;
@@ -108,7 +119,7 @@ export default class CocosHelper {
         return new Promise((resolve, reject) => {
             cc.loader.loadRes(url, type, this._progressCallback, (err, asset) => {
                 if (err) {
-                    cc.log(`${url} [资源加载] 错误 ${err}`);
+                    cc.error(`${url} [资源加载] 错误 ${err}`);
                     resolve(null);
                 }else {
                     resolve(asset);
@@ -139,7 +150,6 @@ export default class CocosHelper {
         if(rootNode.name == nodeName) {
             return rootNode;
         }
-
         for(let i=0; i<rootNode.childrenCount; i++) {
             let node = this.findChildInNode(nodeName, rootNode.children[i]);
             if(node) {
@@ -178,4 +188,87 @@ export default class CocosHelper {
         }
         return com.name;
     }
+    /** 加载bundle */
+    public static loadBundleSync(url: string, options: any): Promise<cc.AssetManager.Bundle> {
+        return new Promise((resolve, reject) => {
+            cc.assetManager.loadBundle(url, options, (err: Error, bundle: cc.AssetManager.Bundle) => {
+                if(!err) {
+                    cc.error(`加载bundle失败, url: ${url}, err:${err}`);
+                    resolve(null);
+                }else {
+                    resolve(bundle);
+                }
+            });
+        });
+    }
+    
+    /** 路径是相对分包文件夹路径的相对路径 */
+    public static loadAssetFromBundleSync(bundleName: string, url: string | string[]) {
+        let bundle = cc.assetManager.getBundle(bundleName);
+        if(!bundle) {
+            cc.error(`加载bundle中的资源失败, 未找到bundle, bundleUrl:${bundleName}`);
+            return null;
+        }
+        return new Promise((resolve, reject) => {
+            bundle.load(url, (err, asset: cc.Asset | cc.Asset[]) => {
+                if(err) {
+                    cc.error(`加载bundle中的资源失败, 未找到asset, url:${url}, err:${err}`);
+                    resolve(null);
+                }else {
+                    resolve(asset);
+                }
+            });
+        });
+    }
+
+    /** 通过路径加载资源, 如果这个资源在bundle内, 会先加载bundle, 在解开bundle获得对应的资源 */
+    public static loadAssetSync(url: string | string[]) {
+        return new Promise((resolve, reject) => {
+            cc.resources.load(url, (err, assets: cc.Asset | cc.Asset[]) => {
+                if(!err) {
+                    cc.error(`加载asset失败, url:${url}, err: ${err}`);
+                    resolve(null);
+                }else {
+                    this.addRef(assets);
+                    resolve(assets);
+                }
+            });
+        });
+    }
+    /** 释放资源 */
+    public static releaseAsset(assets: cc.Asset | cc.Asset[]) {
+        this.decRes(assets);
+    }
+    /** 增加引用计数 */
+    private static addRef(assets: cc.Asset | cc.Asset[]) {
+        if(assets instanceof Array) {
+            for(const a of assets) {
+                a.addRef();
+            }
+        }else {
+            assets.addRef();
+        }
+    }
+    /** 减少引用计数, 当引用计数减少到0时,会自动销毁 */
+    private static decRes(assets: cc.Asset | cc.Asset[]) {
+        if(assets instanceof Array) {
+            for(const a of assets) {
+                a.decRef();
+            }
+        }else {
+            assets.decRef();
+        }
+    }
+
+    /** 怎么用promise实现以下方法, 可以在同一帧内返回一个a, 并且还能异步执行callback方法 */
+    private static testForCallback(callback: Function) {
+        let a = 1;
+        setTimeout(() => {
+            callback(a);
+        }, 1000);
+        return a;
+    }
+
+
 }
+
